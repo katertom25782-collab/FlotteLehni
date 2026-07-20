@@ -1,0 +1,2148 @@
+  <Script>
+
+/**
+ *   Gobale Variable
+ */
+let currentFahrer = "";
+let currentTour = "";
+let currentTourName = "";
+let map;
+let marker;
+let zielMarker;
+let path = [];
+let polyline;
+let statusInterval;
+let gpsWatcher = null;
+let finishingTour = false;
+let startingTour = false;
+let appConfig = {};
+let manualStopStatus = "ANFAHRT";
+let sendGPSBusy = false;
+let activeBookingStopId ="";
+let currentBookingStop = null;
+let currentStopData = null;
+let currentLatitude = null;
+let currentLongitude = null;
+let bookingCounts = {};
+let bookingSaveBusy = false;
+let bookingMaskIsLoading = false;
+let manualBookingMode = false;
+let manualBookingStatusBefore = "";
+
+/**
+ * Init beim Laden
+ */
+window.onload = function () {
+
+  const login = document.getElementById("login");
+  const dashboard = document.getElementById("dashboard");
+
+  if (login) {
+    login.style.display = "block";
+  }
+
+  if (dashboard) {
+    dashboard.style.display = "none";
+  }
+
+  hideFinishButton();
+
+  startingTour = false;
+
+   google.script.run
+    .withSuccessHandler(fillFahrer)
+    .getFahrer();
+
+  google.script.run
+    .withSuccessHandler(fillTouren)
+    .getTouren();
+
+  google.script.run
+  .withSuccessHandler(function(cfg){
+    appConfig = cfg;
+  })
+  .getConfig();
+    
+    // Beim ersten Klick/Fingertipp Vollbild aktivieren
+    document.addEventListener(
+      "click",
+      function firstUserClick() {
+
+        enterFullscreen();
+
+      },
+      {
+        once: true
+      }
+    );
+
+  // Fahrer geändert
+  document.getElementById("fahrer")
+    .addEventListener("change", function () {
+
+      const fahrer = this.value;
+
+      if (!fahrer) return;
+
+      google.script.run
+        .withSuccessHandler(handleActiveTour)
+        .getActiveTourForFahrer(fahrer);
+
+    });
+
+  // Button aktivieren prüfen
+  document.getElementById("fahrer")
+    .addEventListener("change", checkStartReady);
+
+  document.getElementById("tour")
+     .addEventListener("change", function () {
+
+  const tour = this.value;
+  const startSel = document.getElementById("startStop");
+
+  startSel.innerHTML = "";
+  startSel.disabled = true;
+
+  let loading = document.createElement("option");
+  loading.value = "";
+  loading.text = "Haltestellen werden geladen...";
+  startSel.appendChild(loading);
+
+  checkStartReady();
+
+  
+  if (!tour) {
+    startSel.innerHTML = "";
+    let first = document.createElement("option");
+    first.value = "";
+    first.text = "Erst Tour auswählen";
+    startSel.appendChild(first);
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(fillStartStops)
+    .withFailureHandler(function(err) {
+      startSel.innerHTML = "";
+      let opt = document.createElement("option");
+      opt.value = "";
+      opt.text = "Fehler beim Laden";
+      startSel.appendChild(opt);
+      console.error("getTourStops Fehler:", err.message);
+      checkStartReady();
+    })
+    .getTourStops(tour);
+
+});
+  document.getElementById("btnEndTour").style.display = "none";
+  document.getElementById("startStop")
+    .addEventListener("change", checkStartReady);
+
+  checkStartReady();
+
+};
+
+function fillFahrer(list) {
+
+  const sel = document.getElementById("fahrer");
+
+  sel.innerHTML = "";
+  let first = document.createElement("option"); 
+  first.value = ""; 
+  first.text = "Fahrer auswählen";
+  sel.appendChild(first);
+    list.forEach(f => {
+    let opt = document.createElement("option");
+    opt.value =f.id;
+    opt.text = f.name;
+
+    sel.appendChild(opt);
+
+  });
+  checkStartReady();
+}
+/*******************************************
+ * Fülle den Touren Dropdown
+ */
+function fillTouren(list) {
+
+  const sel = document.getElementById("tour");
+
+  sel.innerHTML = "";
+
+  let first = document.createElement("option");
+  first.value = "";
+  first.text = "Tour auswählen";
+  sel.appendChild(first);
+
+  list.forEach(t => {
+
+    let opt = document.createElement("option");
+
+    // Intern arbeitet die App weiterhin mit N001, S002 usw.
+    opt.value = t.tourId;
+
+    // Angezeigt wird der verständliche Tourname.
+    // Falls kein Name vorhanden ist, wird die Tour-ID angezeigt.
+    opt.text = t.tourName || t.tourId;
+
+    // Optional: Tour-ID zusätzlich am Element speichern
+    opt.dataset.tourId = t.tourId;
+
+    sel.appendChild(opt);
+
+  });
+
+  checkStartReady();
+
+  /*
+   * Doppelklick mit Maus
+   */
+  document.addEventListener("dblclick", function(event) {
+
+    if (
+      event.target.closest(
+        "button, select, input, a"
+      )
+    ) {
+      return;
+    }
+
+    restoreFullscreen();
+
+  });
+
+
+  /*
+   * Doppeltippen auf Tablet/Handy
+   */
+  let lastFullscreenTap = 0;
+
+  document.addEventListener("pointerup", function(event) {
+
+    if (
+      event.target.closest(
+        "button, select, input, a"
+      )
+    ) {
+      return;
+    }
+
+    const now = Date.now();
+
+    if (now - lastFullscreenTap < 500) {
+
+      restoreFullscreen();
+
+      lastFullscreenTap = 0;
+
+      return;
+    }
+
+    lastFullscreenTap = now;
+
+  });
+
+}
+function setStartStopLoading(text) {
+
+  const sel = document.getElementById("startStop");
+
+  sel.disabled = true;
+  sel.innerHTML = "";
+
+  let opt = document.createElement("option");
+  opt.value = "";
+  opt.text = text;
+
+  sel.appendChild(opt);
+
+  checkStartReady();
+
+}
+
+function fillStartStops(list) {
+
+  const sel = document.getElementById("startStop");
+
+  sel.innerHTML = "";
+
+  let first = document.createElement("option");
+  first.value = "";
+  first.text = "Starthaltestelle auswählen";
+  sel.appendChild(first);
+
+  list.forEach(s => {
+
+    let opt = document.createElement("option");
+
+    opt.value = s.reihenfolge;
+
+    opt.text =
+      (s.zielName || "Unbekannt") +
+      " (" +
+      s.zielID +
+      ", " +
+      s.reihenfolge +
+      ")";
+
+    sel.appendChild(opt);
+
+  });
+
+  sel.disabled = false;
+
+  checkStartReady();
+
+}
+
+function checkStartReady() {
+
+  const fahrer = document.getElementById("fahrer").value;
+  const tour = document.getElementById("tour").value;
+  const startStop = document.getElementById("startStop").value;
+
+  const btn = document.getElementById("startButton");
+
+  btn.disabled = !(fahrer && tour && startStop);
+
+}
+
+/********************
+ *  Schaltet den Browser in den Fullscrenn Modus Tab Anzeige aus usw.
+ */
+function enterFullscreen() {
+
+  const element = document.documentElement;
+
+  if (document.fullscreenElement) {
+    return;
+  }
+  if (element.requestFullscreen) {
+    element.requestFullscreen().catch(function(err) {
+      console.error("Vollbild konnte nicht aktiviert werden:", err.message);
+    });
+  }
+}
+
+/*********************
+ *  Schaltet den Browser in den Tab Anzeige wieder ein
+ */
+function exitFullscreen() {
+
+  if (document.fullscreenElement && document.exitFullscreen) {
+    document.exitFullscreen();
+  }
+
+}
+/************************************************
+ * 
+ *  Start der eigentlichen App und deren Loops
+ ************************************************/
+function startApp() {
+
+      if (startingTour) {
+    return;
+  }
+
+  startingTour = true;
+  const btn = document.getElementById("startButton");
+
+  btn.disabled = true;
+  btn.innerText = "Tour wird gestartet..."
+
+
+  currentFahrer = document.getElementById("fahrer").value;
+  currentTour = document.getElementById("tour").value;
+
+  const tourSelect =
+    document.getElementById("tour");
+
+  currentTourName =
+    tourSelect.options[tourSelect.selectedIndex].textContent;
+
+  const startIndex =
+    Number(document.getElementById("startStop").value || 1);
+
+  const fahrerSelect = document.getElementById("fahrer");
+  const fahrerName =
+    fahrerSelect.options[fahrerSelect.selectedIndex].text;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      console.log("startTour Ergebnis:", result)
+      if (!result || !result.ok) {
+        alert("Tour konnte nicht gestartet werden.");  
+
+        // Start Button wieder aktive setzen  
+        startingTour = False;
+        const btn = document.getElementById("startButton");
+        btn.disabled = false;
+        btn.innerText = "Start"
+
+        return;
+      }
+
+      // Fahrer / Tour anzeigen
+      document.getElementById("fahrerAnzeige").innerText =fahrerName;
+      document.getElementById("tourAnzeige").textContent = currentTourName || currentTour;
+      document.getElementById("btnStopAction").style.display = "block";
+      document.getElementById("btnShowBooking").style.display = "block";
+
+      // Login ausblenden
+      document.getElementById("login").style.display = "none";
+      // jetzt den FULLScreen aktivieren  
+      enterFullscreen();
+      // Dashboard anzeigen
+      document.getElementById("dashboard").style.display = "block";
+
+      // <<< HIER NEU >>>
+      showFinishButton(); 
+    
+      gpsLoop();
+
+      // Statusabfrage starten
+      startStatusLoop();
+
+      if (CONFIG.DEBUG.ENABLED) {
+
+          setDebugVisible(true);
+      }
+      else {
+
+          setDebugVisible(false);
+      }
+    })
+    .startTour(
+      currentFahrer,
+      currentTour,
+      startIndex
+    );
+
+}
+/********************************************
+ * Mach den " Tour beenden " Button sichtbar
+ * ******************************************/
+ function showFinishButton() {
+
+  document.getElementById("btnEndTour").style.display = "inline-block";
+
+}
+/********************************************
+ * Verstecke den Tour beenden " Button
+ * ******************************************/
+function hideFinishButton() {
+
+  document.getElementById("btnEndTour").style.display = "none";
+
+}
+
+function handleActiveTour(status) {
+
+  if (!status) return;
+
+  const weiter = confirm(
+    "Es gibt eine aktive Tour:\n\n" +
+    "Tour: " + status.tour + "\n" +
+    "Aktueller Stop: " + status.aktuellerStop + "\n" +
+    "Fortschritt: " + status.stopIndex + " / " + status.gesamtStops + "\n\n" +
+    "Tour fortsetzen?"
+  );
+
+  if (weiter) {
+
+  document.getElementById("tour").value = status.tour;
+
+  setStartStopLoading("Lade Haltestellen...");
+
+  google.script.run
+    .withSuccessHandler(function(list) {
+
+      fillStartStops(list);
+
+      document.getElementById("startStop").value = status.stopIndex;
+
+      document.getElementById("startStop").disabled = false;
+
+      checkStartReady();
+
+    })
+    .getTourStops(status.tour);
+
+
+  }
+
+}
+/****************************
+ * GPS Loop 
+ */
+function gpsLoop() {
+
+  if (!navigator.geolocation) {
+    alert("GPS nicht verfügbar");
+    return;
+  }
+
+  // Es läuft bereits ein GPS-Watcher
+  if (gpsWatcher !== null) {
+    return;
+  }
+
+  gpsWatcher = navigator.geolocation.watchPosition(
+
+    function (pos) {
+      
+      const data = {
+        fahrer: currentFahrer,
+        tour: currentTour,
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        speed: pos.coords.speed,
+        altitude: pos.coords.altitude,
+        heading: pos.coords.heading
+      };
+
+      updateUI(data);
+
+      if (sendGPSBusy) {
+        return;
+      } 
+
+      sendGPSBusy = true;
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+
+          sendGPSBusy = false;
+          if (result && result.geofenceEvent === "ANKUNFT") {
+
+            showBookingMask(result.currentStop);
+
+          }
+          if (result && result.geofenceEvent === "ABFAHRT") {
+
+            saveCurrentBookings(function() {
+
+              hideBookingMask();
+
+              google.script.run
+                .withSuccessHandler(function(departureResult) {
+
+                  if (!departureResult || !departureResult.ok) {
+                    console.error(
+                      "Automatische Weiterfahrt fehlgeschlagen:",
+                      departureResult
+                    );
+                    return;
+                  }
+
+                  activeBookingStopId = "";
+
+                  if (departureResult.tourEnd) {
+
+                    stopGPS();
+                    clearInterval(statusInterval);
+
+                    alert(departureResult.message);
+
+                    endTour();
+                    return;
+                  }
+
+                  manualStopStatus = "ANFAHRT";
+
+                  updateStatus(departureResult);
+
+                })
+                .withFailureHandler(function(error) {
+
+                  console.error(
+                    "Automatische Weiterfahrt Fehler:",
+                    error.message
+                  );
+
+                })
+                .confirmAutoDeparture(
+                  currentFahrer,
+                  currentTour
+                );
+
+            });
+
+          }
+          
+          if (result && result.geofenceEvent === "TOURENDE") 
+           {
+             stopGPS();
+             clearInterval(statusInterval);
+
+             saveCurrentBookings(function()  {
+               alert(
+               "Die letzte Haltestelle wurde verlassen.\n" +
+                "Die Tour wird jetzt beendet."
+               );
+              endTour();
+             });
+            return;
+           }
+
+        })
+        .withFailureHandler(function(error) {
+
+          sendGPSBusy = false;
+
+          console.error(
+            "sendGPS Fehler:",
+            error.message
+          );
+
+        })
+        .sendGPS(data);
+          
+    },
+
+    function (err) {
+      console.error("GPS Fehler:", err);
+    },
+
+    {
+      enableHighAccuracy: appConfig.gps.highAccuracy,
+      maximumAge: appConfig.gps.maximumAge,
+      timeout: appConfig.gps.timeout
+ 
+    }
+
+  );
+}
+
+/****************************
+ *  startedie  startStatusLoop
+ *****************************/
+function startStatusLoop() {
+  statusInterval = setInterval(() => {
+
+    console.log("status anfrage",currentFahrer, currentTour);
+
+    google.script.run
+      .withSuccessHandler(updateStatus)
+      .withFailureHandler(function(err) {
+        console.error("getStatus Fehler:", err.message);
+      })
+      .getStatus(currentFahrer,currentTour);
+
+  }, 3000);
+
+}
+/****************************
+ *  Update Status
+ *****************************/
+function updateStatus(data) {
+
+  console.log(
+    "updateStatus data:",
+    JSON.stringify(data)
+  );
+
+  
+  if (!data || !data.ok) {
+    return;
+  }
+
+  if (data.currentStop) {
+
+    document.getElementById("stop").innerText =
+      data.currentStop.zielID || "-";
+
+    document.getElementById("progress").innerText =
+      data.progress.current + " / " +
+      data.progress.total +
+      " (" + data.progress.percent + "%)";
+
+    document.getElementById("zielName").innerText =
+      data.currentStop.zielName || "-";
+
+    document.getElementById("sollzeit").innerText =
+      data.currentStop.sollzeit || "-";
+
+  }
+
+  /*
+   * Buchungsmaske automatisch oder manuell anzeigen
+   */
+  const isAtStop =
+    data.tourStatus === "IM_ZIEL" ||
+    data.tourStatus === "IM_ZIEL_MANUELL";
+
+  if (isAtStop && data.currentStop) {
+
+    if (activeBookingStopId !== data.currentStop.zielID) {
+
+      activeBookingStopId =
+        data.currentStop.zielID;
+
+      showBookingMask(
+        data.currentStop
+      );
+
+    }
+
+  } else {
+
+    if (activeBookingStopId !== "") {
+
+      hideBookingMask();
+
+      activeBookingStopId = "";
+
+    }
+
+  }
+
+  /*
+   * Zieldaten und Marker laden
+   */
+  if (
+    data.currentStop &&
+    data.currentStop.zielID
+  ) {
+
+    google.script.run
+      .withSuccessHandler(function(ziel) {
+
+        if (!ziel) {
+          return;
+        }
+
+        document.getElementById("zielId").innerText =
+          ziel.zielID || "-";
+
+        document.getElementById("zielLat").innerText =
+          ziel.lat || "-";
+
+        document.getElementById("zielLng").innerText =
+          ziel.lng || "-";
+
+        document.getElementById("zielRadius").innerText =
+          ziel.radius || "-";
+
+        if (ziel.lat && ziel.lng) {
+
+          setZiel(
+            ziel.lat,
+            ziel.lng,
+            ziel.zielID
+          );
+
+        }
+        currentStopData = data.currentStop;
+      })
+      .getZiel(
+        data.currentStop.zielID
+      );
+
+  }
+
+}
+
+function updateUI(data) {
+
+  document.getElementById("lat").innerText = data.latitude;
+  document.getElementById("lng").innerText = data.longitude;
+
+  const pos = {
+    lat: data.latitude,
+    lng: data.longitude
+  };
+
+   
+  // erste Initialisierung
+  if (!map) {
+    initMap(pos.lat, pos.lng);
+  }
+
+  // Marker bewegen
+  marker.setPosition(pos);
+
+  // Path speichern
+  path.push(pos);
+  polyline.setPath(path);
+
+  // Karte folgt Fahrzeug
+  map.panTo(pos);
+
+}
+
+
+function initMap(lat, lng) {
+
+  map = new google.maps.Map(document.getElementById("map"), {
+
+    center: { lat: lat, lng: lng },
+    zoom: 16
+
+  });
+
+  marker = new google.maps.Marker({
+
+    position: { lat: lat, lng: lng },
+    map: map,
+    title: "Fahrzeug"
+
+  });
+
+  polyline = new google.maps.Polyline({
+
+    path: path,
+    geodesic: true,
+    strokeColor: "#4285F4",
+    strokeOpacity: 1.0,
+    strokeWeight: 3,
+    map: map
+
+  });
+
+}
+function setZiel(lat, lng, name) {
+
+  if (zielMarker) {
+    zielMarker.setMap(null);
+  }
+
+  zielMarker = new google.maps.Marker({
+
+    position: { lat: lat, lng: lng },
+    map: map,
+    title: name,
+    icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png"
+
+  });
+
+}
+/***************************************************
+ * Button im Dashboard onclick Ereignisse bearbeiten
+ * Manuelle Ankunft beziehungsweise Weiterfahrt
+ */
+function manualStopAction() {
+  
+  console.log("Start manualStopAction",bookingMaskIsLoading)
+
+  // Verrieglung während die Buchunsmaske geladen wird.
+  //if (bookingMaskIsLoading) {
+  //   return;
+  // }
+
+  const btn = document.getElementById("btnStopAction");
+
+  if (!btn) {
+    return;
+  }
+  btn.disabled = true;
+
+  /**
+   * Fahrer bestätigt die Ankunft
+   */
+  if (manualStopStatus === "ANFAHRT") {
+
+    btn.innerText = "Ankunft wird gespeichert...";
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+
+        if (!result || !result.ok) {
+
+          btn.innerText = "Ankunft bestätigen";
+          btn.disabled = false;
+
+          alert("Die Ankunft konnte nicht gespeichert werden.");
+
+          return;
+        }
+
+        manualStopStatus = "IM_ZIEL";
+        /*
+        * Noch nicht weiterfahren lassen.
+        * Zuerst muss die Buchungsmaske vollständig geladen sein.
+        */
+        btn.innerText = "Buchungsmaske wird geladen...";
+        btn.disabled = true;
+
+        updateStatus(result);
+
+        })
+      .withFailureHandler(function(error) {
+
+        btn.innerText = "Ankunft bestätigen";
+        btn.disabled = false;
+
+        alert(
+          "Ankunft konnte nicht gespeichert werden:\n" +
+          error.message
+        );
+
+      })
+      .confirmManualArrival(
+        currentFahrer,
+        currentTour
+      );
+
+    return;
+  }
+
+  /**
+   * Fahrer bestätigt die Weiterfahrt
+   */
+btn.innerText = "Weiterfahrt wird gespeichert...";
+
+// Buchung speichern
+saveCurrentBookings(function() {
+
+// Extra Schleife für die Manuelle Buchung
+if (manualBookingMode) {
+
+  manualBookingMode = false;
+
+  manualStopStatus =
+     manualBookingStatusBefore || "ANFAHRT";
+
+  manualBookingStatusBefore = "";
+
+  activeBookingStopId = "";
+
+  const mask =
+    document.getElementById("bookingMask");
+
+  if (mask) {
+    mask.style.display = "none";
+  }
+
+  // ---- Buchungsmake Abzeigen Btn wieder activ zeigen und 
+  // -----Text zurück setzen
+  const btnShowBooking = document.getElementById("btnShowBooking");
+
+  if (btnShowBooking) {
+    btnShowBooking.disabled = false;
+    btnShowBooking.innerText = "Buchungsmaske anzeigen";
+  }  
+  
+  btn.innerText =
+    manualStopStatus === "IM_ZIEL"
+    ? "Weiterfahrt"
+    : "Ankunft bestätigen";
+
+  btn.disabled = false;
+
+  return;
+  }
+  
+//---------------- ConfirmManualDeparture 
+  google.script.run
+    .withSuccessHandler(function(result) {
+
+      if (!result || !result.ok) {
+
+        btn.innerText = "Weiterfahrt";
+        btn.disabled = false;
+
+        alert(
+          "Die Weiterfahrt konnte nicht gespeichert werden."
+        );
+
+        return;
+      }
+      /*
+      * Erst jetzt ist der Stopwechsel serverseitig abgeschlossen.
+      */
+
+      activeBookingStopId = "";
+
+      if (result.tourEnd) {
+
+        btn.innerText = "Tour wird beendet...";
+
+        alert(result.message);
+
+        endTour();
+
+        return;
+      }
+
+      manualStopStatus = "ANFAHRT";
+
+      btn.innerText = "Ankunft bestätigen";
+      btn.disabled = false;
+
+      updateStatus(result);
+
+    })
+    .withFailureHandler(function(error) {
+
+      btn.innerText = "Weiterfahrt";
+      btn.disabled = false;
+
+      alert(
+        "Weiterfahrt konnte nicht gespeichert werden:\n" +
+        error.message
+      );
+
+    })
+    .confirmManualDeparture(
+      currentFahrer,
+      currentTour
+    );
+
+});
+}
+
+/**
+ * Bestehender Aufruf für die manuelle Weiterfahrt
+ */
+function confirmManualDeparture(fahrer, tour) {
+
+  return confirmDeparture(
+    fahrer,
+    tour,
+    "MANUELL"
+  );
+
+}
+
+/**
+ * Automatische Weiterfahrt nach Geofence-Abfahrt
+ */
+function confirmAutoDeparture(fahrer, tour) {
+
+  return confirmDeparture(
+    fahrer,
+    tour,
+    "AUTO"
+  );
+
+}
+
+
+
+/*******************************
+ * Schluß Abfragen
+ */
+function askSummaryAfterTour(
+  fahrer,
+  tour
+) {
+
+  const showTourSummary = confirm(
+    "Tour beendet.\n\n" +  
+    "Möchtest du die Zusammenfassung " +
+    "der gerade beendeten Tour sehen?"
+  );
+
+  if (showTourSummary) {
+
+    loadBookingSummary(
+      fahrer,
+      tour,
+      "TOUR"
+    );
+
+    return;
+  }
+
+  const showDaySummary = confirm(
+    "Möchtest du deine heutige " +
+    "Tageszusammenfassung sehen?"
+  );
+
+  if (showDaySummary) {
+
+    loadBookingSummary(
+      fahrer,
+      tour,
+      "DAY"
+    );
+
+  }
+
+}
+
+function loadBookingSummary(fahrer, tour, mode) {
+
+  console.log(
+    "loadBookingSummary START",
+    fahrer,
+    tour,
+    mode
+  );
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+
+      console.log(
+        "getBookingSummary SUCCESS",
+        result
+      );
+
+      if (!result || !result.ok) {
+
+        alert(
+          "Die Zusammenfassung konnte nicht erstellt werden."
+        );
+
+        return;
+      }
+
+      showBookingSummary(result);
+
+    })
+    .withFailureHandler(function(error) {
+
+      console.error(
+        "getBookingSummary FEHLER",
+        error
+      );
+
+      alert(
+        "Die Zusammenfassung konnte nicht geladen werden:\n" +
+        error.message
+      );
+
+    })
+    .getBookingSummary(
+      fahrer,
+      tour,
+      mode
+    );
+
+}
+
+/**
+ * Tour- oder Tageszusammenfassung anzeigen
+ */
+function showBookingSummary(result) {
+
+  let title;
+
+  if (result.mode === "TOUR") {
+
+    title =
+      "Tour-Zusammenfassung\n" +
+      "Tour: " + result.tour;
+
+  } else {
+
+    title = "Tageszusammenfassung";
+
+  }
+
+  let text =
+    title +
+    "\n\n" +
+    "Erwachsene gesamt: " +
+    Number(result.adult || 0) +
+    "\n" +
+    "Kinder gesamt: " +
+    Number(result.child || 0) +
+    "\n\n" +
+    "Erwarteter Kassenbestand: " +
+    formatEuro(result.amount);
+
+  if (
+    Array.isArray(result.details) &&
+    result.details.length > 0
+  ) {
+
+    text += "\n\nEinzelheiten:";
+
+    result.details.forEach(function(item) {
+
+      text +=
+        "\n\n" +
+        (item.bezeichnung || "Unbekannte Buchungsart") +
+        "\n" +
+        "Erw.: " +
+        Number(item.adult || 0) +
+        " | Kind: " +
+        Number(item.child || 0) +
+        "\n" +
+        "Betrag: " +
+        formatEuro(item.amount);
+
+    });
+
+  } else {
+
+    text += "\n\nKeine Buchungen vorhanden.";
+
+  }
+
+  alert(text);
+
+}
+
+/***********************************
+ * Zahl als Eurobetrag formatieren
+ */
+function formatEuro(value) {
+
+  return Number(value || 0).toLocaleString(
+    "de-DE",
+    {
+      style: "currency",
+      currency: "EUR"
+    }
+  );
+
+}
+
+/*****************************
+ * Hier wird das Tour beenden Ereignis abgearbeit
+ * neue Version mit Dialog Abfrage
+ */
+
+function endTour() {
+
+  if (finishingTour) {
+    return;
+  }
+
+  finishingTour = true;
+
+  const btn =
+    document.getElementById("btnEndTour");
+
+  btn.disabled = true;
+  btn.innerText = "Tour wird beendet...";
+
+  stopGPS();
+
+  if (statusInterval) {
+    clearInterval(statusInterval);
+    statusInterval = null;
+  }
+
+  const finishedFahrer = currentFahrer;
+  const finishedTour = currentTour;
+
+  console.log(
+    "endTour START",
+    finishedFahrer,
+    finishedTour
+  );
+
+  google.script.run
+
+    .withSuccessHandler(function(result) {
+
+      console.log(
+        "finishTour SUCCESS",
+        result
+      );
+
+      alert(
+        result && result.message
+          ? result.message
+          : "Tour erfolgreich beendet."
+      );
+
+      resetAfterTour();
+
+      askSummaryAfterTour(
+        finishedFahrer,
+        finishedTour
+      );
+
+    })
+
+    .withFailureHandler(function(error) {
+
+      console.error(
+        "finishTour FEHLER",
+        error
+      );
+
+      finishingTour = false;
+
+      btn.disabled = false;
+      btn.innerText = "Tour beenden";
+
+      alert(
+        "Tour konnte nicht beendet werden:\n" +
+        (
+          error && error.message
+            ? error.message
+            : String(error)
+        )
+      );
+
+    })
+
+    .finishTour(
+      finishedFahrer,
+      finishedTour
+    );
+
+}
+
+
+
+
+
+
+
+
+/*********************************
+ * Stop GPS
+ */ 
+function stopGPS() {
+
+  if (gpsWatcher !== null) {
+
+    navigator.geolocation.clearWatch(gpsWatcher);
+
+    gpsWatcher = null;
+
+  }
+
+}
+
+
+
+/******************************************
+ * Buchungsmaske anzeigen und Zeilen laden
+ */
+function showBookingMask(stopData) {
+
+  console.log(
+    "STOPDATA IN showBookingMask:",
+    JSON.stringify(stopData, null, 2)
+  );
+ const mask = document.getElementById("bookingMask");
+
+  const title = document.getElementById("bookingTitle");
+
+  const stop =  document.getElementById("bookingStop");
+
+  const rowsContainer = document.getElementById("bookingRows");
+
+  const action =  document.getElementById("bookingAction");  
+  
+  const btnStopAction = document.getElementById("btnStopAction");
+
+  if (!mask || !title || !stop || !action || !rowsContainer) {
+    return;
+  }
+  bookingMaskIsLoading = true;
+
+  if (btnStopAction) {
+    btnStopAction.disabled = true;
+
+    if (manualStopStatus === "IM_ZIEL") {
+      btnStopAction.innerText =
+        "Buchungsmaske wird geladen...";
+    }
+  }
+
+  const zielID =
+    stopData && stopData.zielID
+      ? stopData.zielID
+      : "";
+
+  const zielName =
+   stopData && stopData.zielName
+    ? stopData.zielName
+    : zielID;
+
+  const stopIndex =
+   stopData && stopData.reihenfolge
+    ? Number(stopData.reihenfolge)
+    : 0;
+
+  const gesamtStops =
+   stopData && stopData.gesamtStops
+    ? Number(stopData.gesamtStops)
+    : 0;
+
+  const istLetzterStop =
+    stopData &&
+    (
+      stopData.istLetzterStop === true ||
+      (
+        stopIndex > 0 &&
+        gesamtStops > 0 &&
+        stopIndex === gesamtStops
+      )
+    );  
+
+  currentBookingStop = {
+    zielID: zielID,
+    stopIndex: stopIndex,
+    gesamtStops: gesamtStops,
+    istLetzterStop: istLetzterStop
+  };
+
+  // --- Reset BuchungsAnz -----
+  bookingCounts = {};
+
+  stop.innerHTML =
+      `<span class="material-symbols-outlined">
+          location_on
+      </span>
+      ${zielName}`;
+
+  rowsContainer.innerHTML = "Buchungen werden geladen...";
+
+  mask.style.display = "block";
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+
+      if (!result) {
+
+       rowsContainer.innerText =
+       "Keine Buchungsdaten vorhanden.";
+
+       bookingMaskIsLoading = false;
+
+        if (btnStopAction) {
+            btnStopAction.disabled = false;
+            btnStopAction.innerText = "Weiterfahrt";
+          }
+
+       return;
+      }
+
+      renderBookingRows(
+        result.rows || [],
+        stopData,
+        result.filterEnabled === true
+      );
+
+      if (btnStopAction) {
+        btnStopAction.disabled = false;
+
+        if (
+          manualStopStatus === "IM_ZIEL" ||
+          manualStopStatus === "MANUELLE_BUCHUNG"
+        ) {
+          btnStopAction.innerText = "Weiterfahrt";
+        }
+      }
+    }) 
+    .withFailureHandler(function(error) {
+
+      rowsContainer.innerText =
+        "Buchungen konnten nicht geladen werden.";
+      
+      bookingMaskIsLoading = false;
+      
+      if (btnStopAction) {
+          btnStopAction.disabled = false;
+
+          if (
+            manualStopStatus === "IM_ZIEL" ||
+            manualStopStatus === "MANUELLE_BUCHUNG"
+          ) {
+            btnStopAction.innerText = "Weiterfahrt";
+          }
+        }
+
+      console.error(
+        "getBookingRows Fehler:",
+        error.message
+      );
+
+    })
+    .getBookingRows();
+
+}
+
+/*********************************
+ * Buchungsmaske ausblenden
+ */
+function hideBookingMask() {
+
+  const mask = document.getElementById("bookingMask");
+
+  if (mask) {
+    mask.style.display = "none";
+  }
+
+}
+
+
+/**********************************
+ * Bestimmt die sichtbaren Buchungs-IDs.
+ */
+function getVisibleBookingIds(list, stopData, filterEnabled) {
+ 
+ 
+  // Prüfen ob "MANUELLE BUCHUNG" 
+  if ( 
+    stopData &&
+    stopData.buchungsModus === "MANUELLE_BUCHUNG"
+  ) {
+    return list.map(function(item) {
+      return Number(item.id);
+    });
+  }
+
+
+  /*
+   * Prüfen, ob dies die letzte Haltestelle ist.
+   */
+  const stopIndex =
+    stopData && stopData.reihenfolge
+      ? Number(stopData.reihenfolge)
+      : 0;
+
+  const gesamtStops =
+    stopData && stopData.gesamtStops
+      ? Number(stopData.gesamtStops)
+      : 0;
+
+  const istLetzterStop =
+    stopData &&
+    (
+      stopData.istLetzterStop === true ||
+      (
+        stopIndex > 0 &&
+        gesamtStops > 0 &&
+        stopIndex === gesamtStops
+      )
+    );
+
+  /*
+   * Letzte Haltestelle:
+   * Nur Ausbuchung anzeigen.
+   */
+  if (istLetzterStop) {
+
+    return list
+      .filter(function(item) {
+        return Number(item.id) === 110;
+      })
+      .map(function(item) {
+        return Number(item.id);
+      });
+
+  }
+
+  /**
+   * Filter ausgeschaltet:
+   * Alle Buchungszeilen anzeigen.
+   */
+  if (!filterEnabled) {
+
+    return list.map(function(item) {
+      return Number(item.id);
+    });
+
+  }
+
+  const info =
+    stopData && stopData.info
+      ? String(stopData.info).trim()
+      : "";
+
+  /*
+   * Lensahner Haltestelle:
+   * Komplette Matrix anzeigen.
+   */
+  if (info.toUpperCase() === "ALLE") {
+
+    return list.map(function(item) {
+      return Number(item.id);
+    });
+
+  }
+
+  /*
+   * Diese Zeilen sind immer sichtbar.
+   */
+  const visibleIds = [
+    100, // Deutschlandkarte
+    101, // Kostenlos
+    110  // Ausstieg
+  ];
+
+  /*
+   * Info kann beispielsweise enthalten:
+   *
+   * 220
+   * oder
+   * 220,230,240
+   */
+  const infoIds = info
+    .split(/[,; ]+/)
+    .map(function(value) {
+      return Number(value);
+    })
+    .filter(function(value) {
+      return !isNaN(value) && value > 0;
+    });
+
+  infoIds.forEach(function(id) {
+
+    if (!visibleIds.includes(id)) {
+      visibleIds.push(id);
+    }
+
+    const bookingRow = list.find(function(item) {
+      return Number(item.id) === id;
+    });
+
+    if (!bookingRow) {
+      return;
+    }
+
+    const priceClass =
+      Number(bookingRow.preisklasse || 0);
+
+    /*
+     * Preisstufe 1 → ID 120
+     * Preisstufe 2 → ID 121
+     * Preisstufe 3 → ID 122
+     * Preisstufe 4 → ID 123
+     */
+    if (priceClass >= 1 && priceClass <= 4) {
+
+      const payingGuestId =
+        119 + priceClass;
+
+      if (!visibleIds.includes(payingGuestId)) {
+        visibleIds.push(payingGuestId);
+      }
+
+    }
+
+  });
+
+  return visibleIds;
+}
+
+ /********************************
+ * Buchungszeilen anzeigen
+ */
+function renderBookingRows(
+  list,
+  stopData,
+  filterEnabled
+) {
+
+  const rowsContainer =
+    document.getElementById("bookingRows");
+
+  if (!rowsContainer) {
+    return;
+  }
+
+  rowsContainer.innerHTML = "";
+
+  if (!list || list.length === 0) {
+
+    rowsContainer.innerText =
+      "Keine Buchungsarten vorhanden.";
+
+    return;
+  }
+
+  const visibleIds =
+    getVisibleBookingIds(
+      list,
+      stopData,
+      filterEnabled
+    );
+
+  list.forEach(function(item) {
+
+    const bookingId = Number(item.id);
+    
+     // Nicht sichtbare Buchungszeilen überspringen
+     
+    if (!visibleIds.includes(bookingId)) {
+      return;
+    }
+
+    // Zähler für diese Buchungsart anlegen
+
+    bookingCounts[bookingId] = {
+      erwachsen: 0,
+      kind: 0
+    };
+
+    const row = document.createElement("div");
+
+    row.className = "bookingRow";
+    
+    //  Interne Informationen
+    row.dataset.id = item.id;
+    row.dataset.price = item.preisklasse;
+
+    /*
+     * Farbe nach Buchungs-ID
+     */
+    if (item.id == 100)
+      row.classList.add("bookingGreen");
+
+    else if (item.id == 101)
+      row.classList.add("bookingYellow");
+
+    else if (item.id == 110)
+      row.classList.add("bookingBlue");
+
+    else if (
+      item.id >= 120 && 
+      item.id <= 123)
+      {
+        row.classList.add("bookingOrange");
+      
+      } else if (
+         item.id >= 200 &&
+         item.id < 300 
+      ){
+        row.classList.add("bookingGemeinde");
+      }
+   // Sichtbarer Inhalt der Buchungszeile  
+
+   row.innerHTML = `
+      <div class="bookingName">
+        ${item.bezeichnung}
+      </div>
+
+      <div class="bookingCounter">
+
+        <span class="counterLabel">
+          Erwachsener
+        </span>
+
+        <button
+          class="bookingMinus"
+          type="button"
+          onclick="changeBookingCount(
+            ${bookingId},
+            'adult',
+            -1
+          )"
+        >
+          −
+        </button>
+
+        <span
+          id="adult_${bookingId}"
+          class="counterValue"
+        >
+          0
+        </span>
+
+        <button
+          class="bookingPlus"
+          type="button"
+          onclick="changeBookingCount(
+            ${bookingId},
+            'adult',
+            1
+          )"
+        >
+          +
+        </button>
+
+      </div>
+
+      <div class="bookingCounter">
+
+        <span class="counterLabel">
+          Kinder
+        </span>
+
+        <button
+          class="bookingMinus"
+          type="button"
+          onclick="changeBookingCount(
+            ${bookingId},
+            'child',
+            -
+          )"
+        >
+          −
+        </button>
+
+        <span
+          id="child_${bookingId}"
+          class="counterValue"
+        >
+          0
+        </span>
+
+        <button
+          class="bookingPlus"
+          type="button"
+          onclick="changeBookingCount(
+            ${bookingId},
+            'child',
+            1
+          )"
+        >
+          +
+        </button>
+
+      </div>
+
+    `;
+
+    rowsContainer.appendChild(row);
+
+  });
+
+}
+/**
+ * Buchungszähler erhöhen oder verringern
+ */
+function changeBookingCount(id, type, change) {
+
+  id = Number(id);
+
+  if (!bookingCounts[id]) {
+
+    bookingCounts[id] = {
+      erwachsen: 0,
+      kind: 0
+    };
+
+  }
+
+  const field =
+    type === "adult"
+      ? "erwachsen"
+      : "kind";
+
+  let value =
+    Number(bookingCounts[id][field] || 0);
+
+  value += Number(change);
+
+  if (value < 0) {
+    value = 0;
+  }
+
+  bookingCounts[id][field] = value;
+
+  const elementId =
+    type === "adult"
+      ? "adult_" + id
+      : "child_" + id;
+
+  const valueElement =
+    document.getElementById(elementId);
+
+  if (valueElement) {
+    valueElement.innerText = value;
+  }
+
+}
+
+/*********************************
+*  collect Bookings
+*/
+function collectBookingValues() {
+
+  const result = [];
+
+  Object.keys(bookingCounts).forEach(function(idText) {
+
+    const id = Number(idText);
+    const values = bookingCounts[id];
+
+    const erwachsen =
+      Number(values.erwachsen || 0);
+
+    const kind =
+      Number(values.kind || 0);
+
+    // Nur Zeilen mit einer tatsächlichen Buchung
+    if (erwachsen > 0 || kind > 0) {
+
+      result.push({
+        id: id,
+        erwachsen: erwachsen,
+        kind: kind
+      });
+
+    }
+
+  });
+
+  return result;
+}
+
+
+/****************************************
+* save Bokking Zahlen
+*/
+function saveCurrentBookings(successCallback) {
+
+  if (bookingSaveBusy) {
+    return;
+  }
+
+  const bookings = collectBookingValues();
+
+  /*
+   * Keine Eingabe:
+   * Nichts speichern und sofort fortfahren.
+   */
+  if (
+    !currentBookingStop ||
+    bookings.length === 0
+    ){
+
+    resetCurrentBookings();
+
+    if (typeof successCallback === "function") {
+      successCallback();
+    }
+
+    return;
+  }
+
+  bookingSaveBusy = true;
+  /*
+   * Werte sichern.
+   * Dadurch können sie sich während des
+   * Serveraufrufes nicht mehr ändern.
+   */
+  const zielID =  currentBookingStop.zielID;
+  const stopIndex = currentBookingStop.stopIndex;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+
+      bookingSaveBusy = false;
+
+      resetCurrentBookings();
+
+       if (typeof successCallback === "function") {
+
+        successCallback(result);
+       }
+    })
+    
+   .withFailureHandler(function(error) {
+
+      bookingSaveBusy = false;
+
+      alert(
+        "Die Fahrgastzahlen konnten nicht gespeichert werden:\n" +
+        error.message
+      );
+
+    }) 
+    .saveBookings(
+      currentFahrer,
+      currentTour,
+      currentBookingStop.zielID,
+      currentBookingStop.stopIndex,
+      bookings
+    );
+
+}
+/**
+* Dazu die Rücksetzfunktion:
+*/ 
+function resetCurrentBookings() {
+
+  bookingCounts = {};
+  currentBookingStop = null;
+  hideBookingMask();
+
+}
+
+/*********************************
+* App nach einer beendeten Tour
+* vollständig zurücksetzen.
+*/
+function resetAfterTour() {
+
+  stopGPS();
+
+  if (statusInterval) {
+    clearInterval(statusInterval);
+    statusInterval = null;
+  }
+
+  finishingTour = false;
+  startingTour = false;
+  sendGPSBusy = false;
+  bookingSaveBusy = false;
+
+  manualStopStatus = "ANFAHRT";
+
+  activeBookingStopId = "";
+  currentBookingStop = null;
+  bookingCounts = {};
+
+  hideBookingMask();
+  hideFinishButton();
+
+  document.getElementById("dashboard").style.display = "none";
+  document.getElementById("login").style.display = "block";
+
+  const tourSelect =
+    document.getElementById("tour");
+
+  if (tourSelect) {
+    tourSelect.value = "";
+  }
+
+  const stopSelect =
+    document.getElementById("startStop");
+
+  if (stopSelect) {
+    stopSelect.innerHTML =
+      '<option value="">Erst Tour auswählen</option>';
+
+    stopSelect.disabled = true;
+  }
+
+  const startButton =
+    document.getElementById("startButton");
+
+  if (startButton) {
+    startButton.disabled = true;
+    startButton.innerText = "Start";
+  }
+
+  const stopButton =
+    document.getElementById("btnStopAction");
+
+  if (stopButton) {
+    stopButton.disabled = false;
+    stopButton.innerText = "Ankunft bestätigen";
+    stopButton.style.display = "none";
+  }
+
+  currentTour = "";
+
+  const finishButton =
+  document.getElementById("btnEndTour");
+
+  if (finishButton) {
+
+  finishButton.disabled = false;
+  finishButton.innerText = "Tour beenden";
+
+  } 
+
+}
+
+function showManualBookingMask() {
+
+  const btnShowBooking =
+    document.getElementById("btnShowBooking");
+
+  const btnStopAction =
+    document.getElementById("btnStopAction");
+
+  
+  if (btnShowBooking) {
+    btnShowBooking.disabled = true;
+    btnShowBooking.innerText =
+      "Haltestelle wird bestimmt...";
+  }
+
+  if (btnStopAction) {
+    btnStopAction.disabled = true;
+  }
+
+  manualBookingStatusBefore = manualStopStatus;
+  manualBookingMode = true;
+  manualStopStatus = "MANUELLE_BUCHUNG";
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+
+      if (!result || !result.ok || !result.stopData) {
+        resetManualBookingStart(
+          "Die Haltestelle konnte nicht bestimmt werden."
+        );
+        return;
+      }
+
+      if (btnShowBooking) {
+        btnShowBooking.innerText =
+          "Buchungsmaske geöffnet";
+      }
+
+      showBookingMask(result.stopData);
+    })
+    .withFailureHandler(function(error) {
+
+      resetManualBookingStart(
+        error && error.message
+          ? error.message
+          : "Fehler bei der Haltestellenauswahl."
+      );
+    })
+    .getNearestBookingStop(
+      currentFahrer,
+      currentTour,
+      currentLatitude,
+      currentLongitude
+    );
+}
+
+function resetManualBookingStart(message) {
+
+  manualBookingMode = false;
+  manualStopStatus =
+    manualBookingStatusBefore || "ANFAHRT";
+
+  manualBookingStatusBefore = "";
+
+  const btnShowBooking =
+    document.getElementById("btnShowBooking");
+
+  const btnStopAction =
+    document.getElementById("btnStopAction");
+
+  if (btnShowBooking) {
+    btnShowBooking.disabled = false;
+    btnShowBooking.innerText =
+      "Buchungsmaske anzeigen";
+  }
+
+  if (btnStopAction) {
+    btnStopAction.disabled = false;
+  }
+
+  if (message) {
+    alert(message);
+  }
+}
+
+
+/*********************************
+ * Vollbild nach Verlassen wieder in FullScreen aktivieren
+ */
+function restoreFullscreen() {
+
+  if (document.fullscreenElement) {
+    return;
+  }
+
+  enterFullscreen();
+
+}
+
+
+/*********************************
+ *  Set Debug on/off
+*/
+function setDebugVisible(visible) {
+
+  document.getElementById("DEBUG").style.display =
+    visible ? "block" : "none";
+
+}
+
+
+
+</Script>

@@ -1,0 +1,104 @@
+<div id="dashboard" style="display:none;">
+
+  <h1>Flotte Lehni</h1>
+
+  <h3>
+    Heute fährt sie:
+    <span id="fahrerAnzeige">-</span>
+  </h3>
+
+  <div class="tourInfo">
+     <span class="tourLabel">Tour:</span>
+     <span id="tourAnzeige">-</span>
+  </div>
+
+  <h1>
+    Nächste Halt:
+    <span id="zielName">-</span>
+
+    Abfahrt:
+    <span id="sollzeit">-</span>
+  </h1>
+
+  <div id="tourButtons">
+
+    <button
+      id="btnStopAction"
+      onclick="manualStopAction()"
+      style="display:none;"
+    >
+      Ankunft bestätigen
+    </button>
+
+    <button
+      id="btnShowBooking"
+      onclick="showManualBookingMask()"
+      style="display:none;"
+    >
+      Buchungsmaske anzeigen
+    </button>
+
+  </div>
+
+  <div id="bookingMask" style="display:none;">
+    <div id="bookingTitle">
+      <div id="bookingStop">
+       <span class="material-symbols-outlined">location_on</span> Lensahn
+
+      </div>
+      <div id="bookingAction">
+        Zu- und Ausbuchung
+      </div>
+      <div id="bookingRows">
+          <!-- Wird später per JavaScript gefüllt -->
+      </div>
+    </div>  
+  </div>  
+
+  <div id="map">karte </div>
+
+  <div id="DEBUG" style="display:none;">
+ 
+ 
+    Ziel-ID:
+    <span id="zielId">-</span> |
+
+    Lat:
+    <span id="zielLat">-</span> |
+
+    Lng:
+    <span id="zielLng">-</span> |
+
+    Radius:
+    <span id="zielRadius">-</span>
+  
+    <br>
+
+    Aktuelle Position Lat:
+    <span id="lat">-</span>
+
+    Lng:
+    <span id="lng">-</span>
+    <br>
+    Status:
+    <span id="dbgStatus">-</span>
+    TourStatus:
+    <span id="dbgTourStatus">-</span>
+    Buchungsmaske:
+    <span id="dbgBooking">-</span>
+    <br>
+    Stop ID:
+    <span id="stop">-</span>
+
+    Fortschritt:
+    <span id="progress">-</span>
+
+   </div>
+
+ 
+
+  <button id="btnEndTour" onclick="endTour()">
+    Tour beenden
+  </button>
+
+</div>
