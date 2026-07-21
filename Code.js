@@ -582,6 +582,35 @@ function confirmDeparture(fahrer, tour, mode) {
 
 }
 
+
+/**
+ * Bestehender Aufruf für die manuelle Weiterfahrt
+ */
+function confirmManualDeparture(fahrer, tour) {
+
+  return confirmDeparture(
+    fahrer,
+    tour,
+    "MANUELL"
+  );
+
+}
+
+/**
+ * Automatische Weiterfahrt nach Geofence-Abfahrt
+ */
+function confirmAutoDeparture(fahrer, tour) {
+
+  return confirmDeparture(
+    fahrer,
+    tour,
+    "AUTO"
+  );
+
+}
+
+
+
 function getBookingRows() {
 
   init();

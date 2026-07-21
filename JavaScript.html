@@ -994,33 +994,6 @@ if (manualBookingMode) {
 });
 }
 
-/**
- * Bestehender Aufruf für die manuelle Weiterfahrt
- */
-function confirmManualDeparture(fahrer, tour) {
-
-  return confirmDeparture(
-    fahrer,
-    tour,
-    "MANUELL"
-  );
-
-}
-
-/**
- * Automatische Weiterfahrt nach Geofence-Abfahrt
- */
-function confirmAutoDeparture(fahrer, tour) {
-
-  return confirmDeparture(
-    fahrer,
-    tour,
-    "AUTO"
-  );
-
-}
-
-
 
 /*******************************
  * Schluß Abfragen
@@ -1281,12 +1254,6 @@ function endTour() {
     );
 
 }
-
-
-
-
-
-
 
 
 /*********************************

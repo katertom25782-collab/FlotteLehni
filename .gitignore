@@ -1,0 +1,20 @@
+# Node.js
+node_modules/
+
+# Protokoll- und temporäre Dateien
+*.log
+*.tmp
+*.bak
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# Lokale VS-Code-Einstellungen
+.vscode/
+
+# CLASP-Anmeldedaten niemals speichern
+.clasprc.json
