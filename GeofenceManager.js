@@ -101,7 +101,7 @@ class GeofenceManager {
       fahrer,
       tour,
       ziel.zielID,
-      "Haltestelle erreicht: " + ziel.ziel
+      "Haltestelle erreicht: " + ziel.zielName
     );
 
     this.sheet.saveTourStatus({
@@ -122,7 +122,7 @@ class GeofenceManager {
       fahrer,
       tour,
       ziel.zielID,
-      "Haltestelle verlassen: " + ziel.ziel
+      "Haltestelle verlassen: " + ziel.zielName
     );
 
     const nextStop = tourManager.nextStop();

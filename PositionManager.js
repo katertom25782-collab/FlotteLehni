@@ -68,6 +68,7 @@ class PositionManager {
       ) || "";
 
     }
+    
 
     /*
     * Status für die Position:

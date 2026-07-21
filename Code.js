@@ -58,16 +58,9 @@ function getTourStops(tour) {
 
   init();
 
-  // FTable genau einmal lesen
   const stops = database.getTour(tour);
 
-  // Fahrplandaten genau einmal lesen
-  const ziele = database.getZieleMap();
-
   return stops.map(stop => {
-
-    const zielID = String(stop.ziel || "").trim();
-    const ziel = ziele[zielID] || null;
 
     let sollzeit = "";
 
@@ -87,8 +80,8 @@ function getTourStops(tour) {
 
     return {
       reihenfolge: stop.reihenfolge,
-      zielID: zielID,
-      zielName: ziel ? ziel.ziel : "Unbekannte Haltestelle",
+      zielID: stop.zielID,
+      zielName: stop.zielName || "Unbekannte Haltestelle",
       sollzeit: sollzeit
     };
 
@@ -624,13 +617,7 @@ function getBookingRows() {
 /**
  * Fahrgastbuchungen einer Haltestelle speichern
  */
-function saveBookings(
-  fahrer,
-  tour,
-  zielID,
-  stopIndex,
-  bookings
-) {
+function saveBookings( fahrer, tour, zielID, stopIndex, bookings ) {
 
   init();
 
@@ -662,18 +649,14 @@ function saveBookings(
 
   }
 
-  /**
+/****************************************
  * Buchungszusammenfassung erstellen
  *
  * mode:
  *   "TOUR" = aktuelle Tour des heutigen Tages
  *   "DAY"  = alle Touren des Fahrers heute
  */
-  function getBookingSummary(
-  fahrer,
-  tour,
-  mode
-  ) {
+  function getBookingSummary( fahrer, tour, mode ) {
 
   init();
 

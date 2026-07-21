@@ -244,6 +244,9 @@ function fillTouren(list) {
   });
 
 }
+/******
+ * Fülle Haltepunkte
+ */
 function setStartStopLoading(text) {
 
   const sel = document.getElementById("startStop");
@@ -404,14 +407,14 @@ function startApp() {
       // Statusabfrage starten
       startStatusLoop();
 
-      if (CONFIG.DEBUG.ENABLED) {
-
-          setDebugVisible(true);
-      }
-      else {
-
-          setDebugVisible(false);
-      }
+      if (CONFIG.DEBUG.ENABLED) 
+        {
+        document.getElementById("DEBUG").style.display = "Block";
+        }
+      else 
+       {
+        document.getElementById("DEBUG").style.display = "none";
+       }
     })
     .startTour(
       currentFahrer,
@@ -458,7 +461,7 @@ function handleActiveTour(status) {
   google.script.run
     .withSuccessHandler(function(list) {
 
-      fillStartStops(list);
+      (list);fillStartStops
 
       document.getElementById("startStop").value = status.stopIndex;
 
@@ -667,7 +670,7 @@ function updateStatus(data) {
 
   }
 
-  /*
+  /*******
    * Buchungsmaske automatisch oder manuell anzeigen
    */
   const isAtStop =
@@ -699,7 +702,7 @@ function updateStatus(data) {
 
   }
 
-  /*
+  /*****************
    * Zieldaten und Marker laden
    */
   if (

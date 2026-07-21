@@ -39,26 +39,23 @@ class Database {
 
   }
 
+  /**
+  * Fahrer laden
+  */
+  getFahrer() {
 
-/**
- * Fahrer laden
- */
-getFahrer() {
+    const data = this.read(CONFIG.SHEETS.FAHRER);
 
-  const data = this.read(CONFIG.SHEETS.FAHRER);
+    data.shift(); // Header entfernen 
 
-  data.shift(); // Header entfernen
-
-  return data
-    .filter(r => String(r[2]).trim().toLowerCase() === "ja")
-    .map(r => ({
-      id: String(r[0]).trim(),
-      name: String(r[1]).trim()
-    }))
-    .filter(f => f.id !== "" && f.name !== "");
-
-}
-
+    return data
+      .filter(r => String(r[2]).trim().toLowerCase() === "ja")
+      .map(r => ({
+       id: String(r[0]).trim(),
+       name: String(r[1]).trim()
+      }))
+      .filter(f => f.id !== "" && f.name !== "");
+  }
   /**
    * Touren aus FTable laden
    */
@@ -92,8 +89,6 @@ getFahrer() {
       };
     });
   }
-
-
   getTourNamen() {
     const rows = this.read(CONFIG.SHEETS.TOURNAMEN);
 
@@ -110,10 +105,6 @@ getFahrer() {
         tourName: String(row[1]).trim()
       }));
   }
-
-
-
-
   /**
    * Tour laden mit Daten aus aus FTable und Fahrplan
    */
@@ -196,41 +187,41 @@ getFahrer() {
   /**
    * Alle Ziele einmal laden und nach ZielID indizieren
    */
-getZieleMap() {
+  getZieleMap() {
 
-  const data = this.read(CONFIG.SHEETS.ZIELE);
-  data.shift();
+    const data = this.read(CONFIG.SHEETS.ZIELE);
+    data.shift();
 
-  const ziele = {};
+    const ziele = {};
 
-  data.forEach(row => {
+    data.forEach(row => {
 
-    const zielID = String(row[0]).trim();
+      const zielID = String(row[0]).trim();
 
-    ziele[zielID] = {
+      ziele[zielID] = {
 
-      zielID: zielID,
+        zielID: zielID,
 
-      // alter Name (Kompatibilität)
-      ziel: String(row[1] || "").trim(),
+        // alter Name (Kompatibilität)
+        ziel: String(row[1] || "").trim(),
 
-      // neuer Name
-      zielName: String(row[1] || "").trim(),
+        // neuer Name
+        zielName: String(row[1] || "").trim(),
 
-      lat: Number(row[2]),
-      lng: Number(row[3]),
-      radius: Number(row[4]),
+        lat: Number(row[2]),
+        lng: Number(row[3]),
+        radius: Number(row[4]),
 
-      // Haltestellen-Info
-      info: String(row[5] || "").trim()
+        // Haltestellen-Info
+        info: String(row[5] || "").trim()
 
-    };
+      };
 
-  });
+    });
 
-  return ziele;
+    return ziele;
 
-}
+  }
 
   /**
    * Buchungsmatrix laden
