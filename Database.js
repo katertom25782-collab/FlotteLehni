@@ -1,10 +1,11 @@
 /**
  * ==========================================================
  * Database.gs
- * Liest Daten aus den Google Sheets
- * GPS Tour App V1.0
+ *  Liest Daten aus Google Sheets
+ *  Liefert fachliche Objekte zurück
+ *  schreibt niemals Daten
  * ==========================================================
- */
+*/
 class Database {
 
   constructor() {
@@ -223,11 +224,9 @@ class Database {
 
   }
 
-  /**
+  /********************************
    * Buchungsmatrix laden
-   */
-  /**
-  * Buchungsarten und Preise laden
+   * Buchungsarten und Preise laden
   */
   getBuchungen() {
 

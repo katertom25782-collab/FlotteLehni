@@ -1,3 +1,13 @@
+/***********************************
+ * SheetManager.gs 
+ *  
+ * schreibt Daten
+ * aktualisiert Daten
+ * darf intern lesen, wenn es zum Schreiben notwendig ist
+ * liefert keine fachlichen
+ * Daten an andere Klassen
+*/
+
 class SheetManager {
 
   constructor(database) {

@@ -851,10 +851,124 @@ function saveBookings( fahrer, tour, zielID, stopIndex, bookings ) {
 /************************************
  * Haltestellen aus wahl für freise Strecke
  */ 
-function getNearestBookingStop(fahrer, tour, latitude, longitude) 
-{
+function getNearestBookingStop(fahrer, tour, latitude, longitude) {
+
   init();
+
+  // GPS prüfen
+  if (
+    latitude === undefined ||
+    longitude === undefined ||
+    isNaN(Number(latitude)) ||
+    isNaN(Number(longitude))
+  ) {
+    throw new Error("Keine gültige GPS-Position vorhanden.");
+  }
+
+  // Tour laden
+  tourManager.load(tour);
+
+  // Aktuellen Status wiederherstellen
+  const status = sheetManager.getTourStatus(fahrer, tour);
+
+  if (status && status.stopIndex) {
+    tourManager.index = Math.max(0, Number(status.stopIndex) - 1);
+  }
+
+  // Kandidaten
+  const currentStop = tourManager.currentStop();
+  const previousStop = tourManager.previousStop();
+
+  const candidates = [];
+
+  addCandidate(previousStop);
+  addCandidate(currentStop);
+
+  if (candidates.length === 0) {
+    throw new Error("Keine Haltestelle gefunden.");
+  }
+
+  // Nächste Haltestelle bestimmen
+  candidates.sort(function(a, b) {
+    return a.distance - b.distance;
+  });
+
+  const nearest = candidates[0];
+
+  return {
+
+    ok: true,
+
+    stopData: {
+
+      tour: nearest.stop.tour,
+      reihenfolge: nearest.stop.reihenfolge,
+
+      zielID: nearest.ziel.zielID,
+      zielName: nearest.ziel.ziel,
+
+      sollzeit: nearest.stop.sollzeit,
+
+      info: "ALLE",
+
+      istLetzterStop: false,
+      buchungsModus: "MANUELLE_BUCHUNG"
+
+    },
+
+    entfernung: Math.round(nearest.distance),
+
+    vergleich: candidates.map(function(c) {
+
+      return {
+
+        zielID: c.ziel.zielID,
+        zielName: c.ziel.ziel,
+        reihenfolge: c.stop.reihenfolge,
+        entfernung: Math.round(c.distance)
+
+      };
+
+    })
+
+  };
+
+
+  // -------------------------------------------------
+  // Hilfsfunktion
+  // -------------------------------------------------
+
+  function addCandidate(stop) {
+
+    if (!stop) return;
+
+    const ziel = db.getZiel(stop.ziel);
+
+    if (!ziel) return;
+
+    candidates.push({
+
+      stop: stop,
+      ziel: ziel,
+
+      distance: Util.distance(
+
+        Number(latitude),
+        Number(longitude),
+
+        Number(ziel.lat),
+        Number(ziel.lng)
+
+      )
+
+    });
+
+  }
+
 }
+
+
+
 
 /*******************************************************
  * Test Funtionen
