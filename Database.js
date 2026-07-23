@@ -155,8 +155,66 @@ class Database {
         };
 
       });
+      
+      
+  }
+  
+  getActiveTourForFahrer(fahrer) {
+
+  const sheet = this.sheet(CONFIG.SHEETS.TOURSTATUS);
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = data.length - 1; i >= 1; i--) {
+
+    if (
+      String(data[i][0]).trim() === String(fahrer).trim() &&
+      String(data[i][2]).trim() !== "Beendet"
+    ) {
+      return {
+        fahrer: data[i][0],
+        tour: data[i][1],
+        status: data[i][2],
+        aktuellerStop: data[i][5],
+        stopIndex: data[i][6],
+        gesamtStops: data[i][7],
+        fortschritt: data[i][8]
+      };
+    }
+
   }
 
+  return null;
+  }
+
+  getTourStatus(fahrer, tour) {
+
+    const sheet = this.sheet(CONFIG.SHEETS.TOURSTATUS);
+    const data = sheet.getDataRange().getValues();
+
+    for (let i = data.length - 1; i >= 1; i--) {
+
+      if (
+        String(data[i][0]).trim() === String(fahrer).trim() &&
+        String(data[i][1]).trim() === String(tour).trim() &&
+        String(data[i][2]).trim() !== "Beendet"
+      ) {
+        return {
+          row: i + 1,
+          fahrer: data[i][0],
+          tour: data[i][1],
+          status: data[i][2],
+          aktuellerStop: data[i][5],
+          stopIndex: data[i][6],
+          gesamtStops: data[i][7],
+          fortschritt: data[i][8]
+        };
+      }
+
+    }
+
+    return null;
+
+  }
 
   /**
    * Zielinformationen laden
@@ -265,6 +323,7 @@ class Database {
       });
 
   }
+
 
 
 }

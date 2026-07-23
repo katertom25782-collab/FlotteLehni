@@ -9,8 +9,8 @@
  ********************************************************************/
 class GeofenceManager {
 
-  constructor(sheetManager) {
-
+  constructor(database,sheetManager) {
+    this.db=database;
     this.sheet = sheetManager;
 
   }
@@ -42,7 +42,7 @@ class GeofenceManager {
       );
 
       // Tourstatus IMMER nach Erhalt des Locks lesen
-      const status = this.sheet.getTourStatus(fahrer, tour);
+      const status = this.db.getTourStatus(fahrer, tour);
 
       const statusText = status
         ? String(status.status || "").trim()
@@ -124,8 +124,8 @@ class GeofenceManager {
       ziel.zielID,
       "Haltestelle verlassen: " + ziel.zielName
     );
-
-    const nextStop = tourManager.nextStop();
+    const oldStop = tourManager.nextStop();
+    const nextStop = tourManager.advanceToNextStop();
     const progress = tourManager.progress();
 
     // Letzte Haltestelle erreicht

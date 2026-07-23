@@ -42,12 +42,9 @@ function init() {
   database = new Database();
   sheetManager = new SheetManager(database);
   tourManager = new TourManager(database);
-  geofenceManager = new GeofenceManager(sheetManager);
-
+  geofenceManager = new GeofenceManager(database,sheetManager);
   positionManager = new PositionManager(
-    tourManager,
-    geofenceManager,
-    sheetManager
+    database,tourManager,geofenceManager,sheetManager
   );
 
 }
@@ -160,7 +157,8 @@ function sendGPS(data) {
 
    init();
 
-  const status = sheetManager.getTourStatus(data.fahrer, data.tour);
+  const status =  database.getTourStatus(data.Fahrer,data.tour);
+  
 
   tourManager.load(data.tour);
 
@@ -182,7 +180,7 @@ function getStatus(fahrer, tour) {
     init();
 
     const status =
-      sheetManager.getTourStatus(fahrer, tour);
+      database.getTourStatus(fahrer, tour);
 
     tourManager.load(tour);
 
@@ -274,7 +272,7 @@ function getTourData(tour) {
  */
 function getActiveTourForFahrer(fahrer) {
   init();
-  return sheetManager.getActiveTourForFahrer(fahrer);
+  return database.getActiveTourForFahrer(fahrer);
 }
 function getFahrer() {
   const db = new Database();
@@ -358,7 +356,7 @@ function confirmManualArrival(fahrer, tour) {
 
   init();
 
-  const status = sheetManager.getTourStatus(fahrer, tour);
+  const status = database.getTourStatus(fahrer, tour);
 
   tourManager.load(tour);
 
@@ -403,12 +401,14 @@ function confirmManualArrival(fahrer, tour) {
   }};
   
 }
-/**********************************+
- * Gemeinsame Weiterfahrt für manuellen und automatischen Modus
+/**********************************
+ * Manuelle Weiterfahrt
  *
  * mode:
  *   "MANUELL"
- *   "AUTO"
+ *
+ * Die automatische Abfahrt wird vollständig
+ * durch GeofenceManager.onExit() verarbeitet.
  */
 function confirmDeparture(fahrer, tour, mode) {
 
@@ -419,21 +419,63 @@ function confirmDeparture(fahrer, tour, mode) {
       .trim()
       .toUpperCase();
 
-  const isAuto =
-    departureMode === "AUTO";
+  /*
+   * Automatische Abfahrt wurde bereits vollständig
+   * im GeofenceManager verarbeitet.
+   */
+  if (departureMode === "AUTO") {
+
+    return {
+      ok: true,
+      ignored: true,
+      mode: "AUTO",
+      message:
+        "Die automatische Abfahrt wurde bereits " +
+        "durch den GeofenceManager verarbeitet."
+    };
+
+  }
 
   // Aktuellen Tourstatus lesen
   const status =
-    sheetManager.getTourStatus(
+    database.getTourStatus(
       fahrer,
       tour
     );
+
+  if (!status) {
+    throw new Error(
+      "Kein aktiver Tourstatus vorhanden."
+    );
+  }
+
+  /*
+   * Manuelle Abfahrt nur zulassen,
+   * wenn das Fahrzeug noch an der Haltestelle steht.
+   *
+   * Hat die Automatik bereits auf „Aktiv“ geschaltet,
+   * wird der Tastendruck ignoriert.
+   */
+  if (
+    status.status !== "IM_ZIEL" &&
+    status.status !== "IM_ZIEL_MANUELL"
+  ) {
+
+    return {
+      ok: true,
+      ignored: true,
+      mode: "MANUELL",
+      message:
+        "Die Haltestelle wurde bereits verlassen."
+    };
+
+  }
 
   // Tour laden
   tourManager.load(tour);
 
   // Gespeicherten StopIndex wiederherstellen
-  if (status && status.stopIndex) {
+  if (status.stopIndex) {
 
     tourManager.setIndex(
       Number(status.stopIndex) - 1
@@ -441,7 +483,7 @@ function confirmDeparture(fahrer, tour, mode) {
 
   }
 
-  // Bisherigen Stop holen
+  // Tatsächlich aktuellen Stop holen
   const oldStop =
     tourManager.nextStop();
 
@@ -459,33 +501,23 @@ function confirmDeparture(fahrer, tour, mode) {
       ? oldZiel.ziel
       : oldStop.ziel;
 
-  /*
-   * Nur die manuelle Abfahrt wird hier protokolliert.
-   *
-   * Die automatische Abfahrt wurde bereits beim
-   * Geofence-Ereignis als ABFAHRT protokolliert.
-   */
-  if (!isAuto) {
+  sheetManager.saveLog(
+    "ABFAHRT_MANUELL",
+    fahrer,
+    tour,
+    oldStop.ziel,
+    "Haltestelle manuell verlassen: " +
+      oldZielName
+  );
 
-    sheetManager.saveLog(
-      "ABFAHRT_MANUELL",
-      fahrer,
-      tour,
-      oldStop.ziel,
-      "Haltestelle manuell verlassen: " +
-        oldZielName
-    );
-
-  }
-
-  // Zum nächsten Stop wechseln
+  // Genau einmal zum nächsten Stop wechseln
   const nextStop =
     tourManager.advanceToNextStop();
 
   const progress =
     tourManager.progress();
 
-  /**
+  /*
    * Kein weiterer Stop vorhanden:
    * Tourende wurde erreicht.
    */
@@ -506,15 +538,13 @@ function confirmDeparture(fahrer, tour, mode) {
       fahrer,
       tour,
       oldStop.ziel,
-      isAuto
-        ? "Letzte Haltestelle automatisch verlassen"
-        : "Letzte Haltestelle manuell verlassen"
+      "Letzte Haltestelle manuell verlassen"
     );
 
     return {
       ok: true,
       tourEnd: true,
-      mode: departureMode,
+      mode: "MANUELL",
       message:
         "Die letzte Haltestelle wurde verlassen. " +
         "Die Tour wird jetzt beendet."
@@ -537,11 +567,10 @@ function confirmDeparture(fahrer, tour, mode) {
     fortschritt: progress.percent
   });
 
-  // Sauberes Browser-Objekt zurückgeben
   return {
     ok: true,
     tourEnd: false,
-    mode: departureMode,
+    mode: "MANUELL",
 
     currentStop: {
       tour: nextStop.tour,
@@ -572,9 +601,7 @@ function confirmDeparture(fahrer, tour, mode) {
     progress: progress
   };
 
-
 }
-
 
 /**
  * Bestehender Aufruf für die manuelle Weiterfahrt
@@ -869,7 +896,7 @@ function getNearestBookingStop(fahrer, tour, latitude, longitude) {
   tourManager.load(tour);
 
   // Aktuellen Status wiederherstellen
-  const status = sheetManager.getTourStatus(fahrer, tour);
+  const status = database.getTourStatus(fahrer, tour);
 
   if (status && status.stopIndex) {
     tourManager.index = Math.max(0, Number(status.stopIndex) - 1);
